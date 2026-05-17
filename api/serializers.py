@@ -4,7 +4,7 @@ Serializers for API endpoints
 
 from rest_framework import serializers
 from django.contrib.auth.password_validation import validate_password
-from .models import User, Manufacturer, Product, Batch, QRCode
+from .models import User, Manufacturer, Product, Batch, QRCode, Pharmacy, Distributor, BatchDispatch
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -18,7 +18,10 @@ class UserSerializer(serializers.ModelSerializer):
                   'city', 'country', 'is_active', 'created_at']
         read_only_fields = ['id', 'created_at']
         extra_kwargs = {
-            'password': {'write_only': True}
+            'password': {'write_only': True},
+            'phone_number': {'required': False, 'allow_blank': True},
+            'city': {'required': False},
+            'country': {'required': False},
         }
     
     def create(self, validated_data):
@@ -44,10 +47,11 @@ class ManufacturerSerializer(serializers.ModelSerializer):
     """Manufacturer serializer"""
     user = UserSerializer(read_only=True)
     user_id = serializers.UUIDField(write_only=True, required=False)
-    
+    is_active = serializers.BooleanField(source='user.is_active', read_only=True)
+
     class Meta:
         model = Manufacturer
-        fields = ['id', 'user', 'user_id', 'company_name', 'drug_license_number',
+        fields = ['id', 'user', 'user_id', 'is_active', 'company_name', 'drug_license_number',
                   'manufacturing_address', 'city', 'country', 'approval_status',
                   'approved_by', 'approved_at', 'created_at']
         read_only_fields = ['id', 'approved_by', 'approved_at', 'created_at']
@@ -67,7 +71,7 @@ class ProductSerializer(serializers.ModelSerializer):
         model = Product
         fields = ['id', 'manufacturer', 'manufacturer_name', 'product_name', 'product_code',
                   'dosage_form', 'strength', 'description', 'created_at']
-        read_only_fields = ['id', 'created_at']
+        read_only_fields = ['id', 'created_at', 'manufacturer']
 
 
 class BatchSerializer(serializers.ModelSerializer):
@@ -97,6 +101,48 @@ class QRCodeSerializer(serializers.ModelSerializer):
         fields = ['id', 'batch', 'batch_number', 'product_name', 'qr_code_value',
                   'is_active', 'created_at']
         read_only_fields = ['id', 'qr_code_value', 'created_at']
+
+
+class PharmacySerializer(serializers.ModelSerializer):
+    user = UserSerializer(read_only=True)
+    email = serializers.EmailField(source='user.email', read_only=True)
+    is_active = serializers.BooleanField(source='user.is_active', read_only=True)
+
+    class Meta:
+        model = Pharmacy
+        fields = ['id', 'user', 'email', 'is_active', 'pharmacy_name', 'license_number', 'city', 'country',
+                  'approval_status', 'approved_by', 'approved_at', 'created_at']
+        read_only_fields = ['id', 'approved_by', 'approved_at', 'created_at']
+
+
+class DistributorSerializer(serializers.ModelSerializer):
+    user = UserSerializer(read_only=True)
+    email = serializers.EmailField(source='user.email', read_only=True)
+    is_active = serializers.BooleanField(source='user.is_active', read_only=True)
+
+    class Meta:
+        model = Distributor
+        fields = ['id', 'user', 'email', 'is_active', 'company_name', 'license_number', 'city', 'country',
+                  'approval_status', 'approved_by', 'approved_at', 'created_at']
+        read_only_fields = ['id', 'approved_by', 'approved_at', 'created_at']
+
+
+class BatchDispatchSerializer(serializers.ModelSerializer):
+    """Batch dispatch serializer — records stock movement between supply chain participants"""
+    dispatched_by_name = serializers.CharField(source='dispatched_by.full_name', read_only=True)
+    dispatched_to_name = serializers.CharField(source='dispatched_to.full_name', read_only=True)
+    dispatched_to_role = serializers.CharField(source='dispatched_to.role', read_only=True)
+    batch_number = serializers.CharField(source='batch.batch_number', read_only=True)
+    product_name = serializers.CharField(source='batch.product.product_name', read_only=True)
+    expiry_date  = serializers.DateField(source='batch.expiry_date', read_only=True)
+
+    class Meta:
+        model = BatchDispatch
+        fields = ['id', 'batch', 'batch_number', 'product_name', 'expiry_date',
+                  'dispatched_by', 'dispatched_by_name',
+                  'dispatched_to', 'dispatched_to_name', 'dispatched_to_role',
+                  'quantity', 'notes', 'dispatched_at']
+        read_only_fields = ['id', 'dispatched_at', 'dispatched_by']
 
 
 class QRVerificationSerializer(serializers.Serializer):

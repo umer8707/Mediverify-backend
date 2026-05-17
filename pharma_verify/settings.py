@@ -75,17 +75,27 @@ WSGI_APPLICATION = 'pharma_verify.wsgi.application'
 
 # Database
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases
+# Set USE_SQLITE=True in .env to run without PostgreSQL (e.g. local dev)
+USE_SQLITE = config('USE_SQLITE', default=False, cast=bool)
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.postgresql',
-        'NAME': config('DB_NAME', default='pharma_verify_db'),
-        'USER': config('DB_USER', default='postgres'),
-        'PASSWORD': config('DB_PASSWORD', default='postgres'),
-        'HOST': config('DB_HOST', default='localhost'),
-        'PORT': config('DB_PORT', default='5432'),
+if USE_SQLITE:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': os.path.join(BASE_DIR, 'db.sqlite3'),
+        }
     }
-}
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': config('DB_NAME', default='pharma_verify_db'),
+            'USER': config('DB_USER', default='postgres'),
+            'PASSWORD': config('DB_PASSWORD', default='postgres'),
+            'HOST': config('DB_HOST', default='localhost'),
+            'PORT': config('DB_PORT', default='5432'),
+        }
+    }
 
 # MongoDB Configuration
 MONGODB_SETTINGS = {
@@ -146,6 +156,7 @@ AUTH_USER_MODEL = 'api.User'
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': (
         'rest_framework_simplejwt.authentication.JWTAuthentication',
+        'rest_framework.authentication.SessionAuthentication',
     ),
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
@@ -175,10 +186,14 @@ CORS_ALLOWED_ORIGINS = [
 
 CORS_ALLOW_CREDENTIALS = True
 
-# Blockchain Configuration (Placeholders for Future Integration)
-# NOTE: Blockchain integration is intentionally deferred. These settings are
-# placeholders only and are NOT used anywhere in the codebase yet.
-# When blockchain integration is implemented, these will be used to configure
-# the blockchain connection and contract address.
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:3000",
+    "http://localhost:8000",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:8000",
+]
+
+# Blockchain Configuration — Ethereum Sepolia testnet
 SEPOLIA_RPC_URL = config('SEPOLIA_RPC_URL', default='')
 CONTRACT_ADDRESS = config('CONTRACT_ADDRESS', default='')
+DEPLOYER_PRIVATE_KEY = config('DEPLOYER_PRIVATE_KEY', default='')

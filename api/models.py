@@ -23,6 +23,8 @@ class UserManager(BaseUserManager):
     def create_superuser(self, email, password=None, **extra_fields):
         extra_fields.setdefault('is_active', True)
         extra_fields.setdefault('role', 'ADMIN')
+        extra_fields.setdefault('is_staff', True)
+        extra_fields.setdefault('is_superuser', True)
         return self.create_user(email, password, **extra_fields)
 
 
@@ -51,6 +53,8 @@ class User(AbstractBaseUser):
     city = models.CharField(max_length=100, default='Lahore')
     country = models.CharField(max_length=100, default='Pakistan')
     is_active = models.BooleanField(default=True)
+    is_staff = models.BooleanField(default=False)  # Django admin access
+    is_superuser = models.BooleanField(default=False)  # Django admin full access
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
@@ -65,6 +69,12 @@ class User(AbstractBaseUser):
     
     def __str__(self):
         return f"{self.full_name} ({self.email})"
+    
+    def has_perm(self, perm, obj=None):
+        return self.is_superuser
+    
+    def has_module_perms(self, app_label):
+        return self.is_superuser
 
 
 class Manufacturer(models.Model):
@@ -206,10 +216,98 @@ class QRCode(models.Model):
     qr_code_value = models.CharField(max_length=255, unique=True)
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
-    
+
     class Meta:
         db_table = 'qr_codes'
         ordering = ['-created_at']
-    
+
     def __str__(self):
         return f"QR: {self.qr_code_value[:20]}... (Batch: {self.batch.batch_number})"
+
+
+APPROVAL_STATUS_CHOICES = [
+    ('PENDING', 'Pending'),
+    ('APPROVED', 'Approved'),
+    ('REJECTED', 'Rejected'),
+]
+
+
+class Pharmacy(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='pharmacy_profile')
+    pharmacy_name = models.CharField(max_length=255)
+    license_number = models.CharField(max_length=100, unique=True)
+    city = models.CharField(max_length=100, default='Lahore')
+    country = models.CharField(max_length=100, default='Pakistan')
+    approval_status = models.CharField(max_length=20, choices=APPROVAL_STATUS_CHOICES, default='PENDING')
+    approved_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='approved_pharmacies')
+    approved_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'pharmacies'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.pharmacy_name} ({self.license_number})"
+
+
+class Distributor(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='distributor_profile')
+    company_name = models.CharField(max_length=255)
+    license_number = models.CharField(max_length=100, unique=True)
+    city = models.CharField(max_length=100, default='Lahore')
+    country = models.CharField(max_length=100, default='Pakistan')
+    approval_status = models.CharField(max_length=20, choices=APPROVAL_STATUS_CHOICES, default='PENDING')
+    approved_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='approved_distributors')
+    approved_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'distributors'
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.company_name} ({self.license_number})"
+
+
+class BatchDispatch(models.Model):
+    """
+    Records stock movement between supply chain participants.
+    MANUFACTURER → DISTRIBUTOR
+    DISTRIBUTOR → PHARMACY
+    """
+    batch         = models.ForeignKey(Batch, on_delete=models.CASCADE, related_name='dispatches')
+    dispatched_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='dispatches_sent')
+    dispatched_to = models.ForeignKey(User, on_delete=models.CASCADE, related_name='dispatches_received')
+    quantity      = models.PositiveIntegerField()
+    notes         = models.TextField(blank=True)
+    dispatched_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'batch_dispatches'
+        ordering = ['-dispatched_at']
+
+    def __str__(self):
+        return f"{self.batch.batch_number}: {self.quantity} units → {self.dispatched_to.full_name}"
+
+
+class DispensedQR(models.Model):
+    """
+    Records each unique QR code dispensed by a pharmacy to a consumer.
+    Created on the first GENUINE scan by an authenticated pharmacy user.
+    unique_together prevents double-counting if the endpoint is called twice.
+    """
+    qr_code      = models.ForeignKey(QRCode, on_delete=models.CASCADE, related_name='dispense_records')
+    dispensed_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='dispensed_qrs')
+    batch        = models.ForeignKey(Batch, on_delete=models.CASCADE, related_name='dispenses')
+    dispensed_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'dispensed_qrs'
+        unique_together = [('qr_code', 'dispensed_by')]
+        ordering = ['-dispensed_at']
+
+    def __str__(self):
+        return f"{self.qr_code.qr_code_value[:20]}... dispensed by {self.dispensed_by.full_name}"
